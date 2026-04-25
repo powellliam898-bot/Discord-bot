@@ -165,6 +165,50 @@ def _format_uptime(delta: datetime.timedelta) -> str:
     return " ".join(parts)
 
 
+@bot.tree.command(name="help", description="Show the list of available commands")
+async def help_command(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="Bot Commands",
+        description="Here's everything I can do:",
+        color=0x5865F2,
+    )
+
+    embed.add_field(
+        name="General",
+        value=(
+            "**/help** — Show this list of commands\n"
+            "**/ping** — Check the bot's latency\n"
+            "**/status** — Show bot uptime, latency, and server count\n"
+            "**/embed** `title` `description` `[color]` — Post a custom embed message"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Moderation",
+        value=(
+            "**/kick** `member` `[reason]` — Kick a member\n"
+            "**/ban** `member` `[reason]` — Ban a member\n"
+            "**/timeout** `member` `seconds` — Timeout a member\n"
+            "**/promote** `member` — Promote a member by clicking a role button"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Restricted Roles",
+        value=(
+            "Moderation and `/embed` are limited to: "
+            "Chief of Police, Assistant Chief, Deputy Chief, Board of Chiefs."
+        ),
+        inline=False,
+    )
+
+    embed.set_footer(text=f"Requested by {interaction.user}")
+
+    await interaction.response.send_message(embed=embed)
+
+
 @bot.tree.command(name="status", description="Show bot uptime and latency")
 async def status(interaction: discord.Interaction):
     now = datetime.datetime.now(datetime.timezone.utc)
