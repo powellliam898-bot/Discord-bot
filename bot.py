@@ -104,6 +104,16 @@ async def ping_slash(interaction: discord.Interaction):
     )
 
 
+async def _explain_forbidden(action: str, member: discord.Member) -> str:
+    return (
+        f"I couldn't {action} {member.mention}. This is usually one of:\n"
+        f"• My bot role is **below** {member.mention}'s highest role "
+        f"(move my role above theirs in Server Settings → Roles).\n"
+        f"• I'm missing the required Discord permission for this action.\n"
+        f"• You're trying to act on the server owner (not allowed)."
+    )
+
+
 @bot.tree.command(name="kick", description="Kick a user")
 @has_allowed_role()
 async def kick(
@@ -111,7 +121,13 @@ async def kick(
     member: discord.Member,
     reason: str = "No reason",
 ):
-    await member.kick(reason=reason)
+    try:
+        await member.kick(reason=reason)
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            await _explain_forbidden("kick", member), ephemeral=True
+        )
+        return
     await interaction.response.send_message(f"Kicked {member.mention}")
     await send_mod_log(interaction, "kicked", member, reason, color=0xE67E22)
 
@@ -123,7 +139,13 @@ async def ban(
     member: discord.Member,
     reason: str = "No reason",
 ):
-    await member.ban(reason=reason)
+    try:
+        await member.ban(reason=reason)
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            await _explain_forbidden("ban", member), ephemeral=True
+        )
+        return
     await interaction.response.send_message(f"Banned {member.mention}")
     await send_mod_log(interaction, "banned", member, reason, color=0xE74C3C)
 
@@ -136,7 +158,18 @@ async def timeout(
     seconds: int,
 ):
     until = discord.utils.utcnow() + datetime.timedelta(seconds=seconds)
-    await member.timeout(until)
+    try:
+        await member.timeout(until)
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            await _explain_forbidden("timeout", member), ephemeral=True
+        )
+        return
+    except discord.HTTPException as e:
+        await interaction.response.send_message(
+            f"Discord rejected the timeout: {e}", ephemeral=True
+        )
+        return
     await interaction.response.send_message(
         f"Timed out {member.mention} for {seconds}s"
     )
