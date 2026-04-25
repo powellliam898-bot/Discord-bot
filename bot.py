@@ -14,8 +14,11 @@ if not TOKEN:
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+WELCOME_CHANNEL_NAME = os.environ.get("WELCOME_CHANNEL_NAME", "welcome")
 
 ALLOWED_ROLES = {
     "chief of police",
@@ -90,6 +93,45 @@ async def on_ready():
         print(f"Synced {len(synced)} slash command(s).")
     except Exception as e:
         print(f"Failed to sync slash commands: {e}")
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    guild = member.guild
+    channel = discord.utils.get(guild.text_channels, name=WELCOME_CHANNEL_NAME)
+    if channel is None:
+        print(
+            f"[welcome] No #{WELCOME_CHANNEL_NAME} channel found in "
+            f"'{guild.name}'. Skipping welcome for {member}."
+        )
+        return
+
+    embed = discord.Embed(
+        title=f"Welcome to {guild.name}!",
+        description=(
+            f"Hey {member.mention}, glad to have you here! 🎉\n"
+            f"You are member **#{guild.member_count}**."
+        ),
+        color=0x5865F2,
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.add_field(
+        name="Account created",
+        value=discord.utils.format_dt(member.created_at, style="R"),
+        inline=True,
+    )
+    embed.set_footer(text=f"User ID: {member.id}")
+
+    try:
+        await channel.send(content=member.mention, embed=embed)
+    except discord.Forbidden:
+        print(
+            f"[welcome] Missing permission to send messages in "
+            f"#{channel.name} ({guild.name})."
+        )
+    except discord.HTTPException as e:
+        print(f"[welcome] Failed to send welcome: {e}")
 
 
 @bot.command(name="ping")
