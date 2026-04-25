@@ -20,6 +20,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 WELCOME_CHANNEL_NAME = os.environ.get("WELCOME_CHANNEL_NAME", "welcome")
 PROMOTION_CHANNEL_NAME = os.environ.get("PROMOTION_CHANNEL_NAME", "promotions")
+INFRACTION_CHANNEL_NAME = os.environ.get("INFRACTION_CHANNEL_NAME", "infractions")
 
 ALLOWED_ROLES = {
     "chief of police",
@@ -191,7 +192,9 @@ async def help_command(interaction: discord.Interaction):
             "**/kick** `member` `[reason]` — Kick a member\n"
             "**/ban** `member` `[reason]` — Ban a member\n"
             "**/timeout** `member` `seconds` — Timeout a member\n"
-            "**/promote** `member` — Promote a member by clicking a role button"
+            "**/promote** `member` — Promote a member by clicking a role button\n"
+            "**/infract** `member` `reason` — Issue an infraction "
+            "(Demotion / Written Warning / Warning / Notice)"
         ),
         inline=False,
     )
@@ -497,6 +500,171 @@ async def promote_error(
             await interaction.response.send_message(message, ephemeral=True)
     except discord.NotFound:
         print(f"[promote.error] Could not respond to interaction: {error}")
+
+
+INFRACTION_TYPES = {
+    "Demotion": {"color": 0xE74C3C, "emoji": "⬇️", "style": discord.ButtonStyle.danger},
+    "Written Warning": {"color": 0xE67E22, "emoji": "📝", "style": discord.ButtonStyle.danger},
+    "Warning": {"color": 0xF1C40F, "emoji": "⚠️", "style": discord.ButtonStyle.primary},
+    "Notice": {"color": 0x3498DB, "emoji": "📌", "style": discord.ButtonStyle.secondary},
+}
+
+
+async def send_infraction_announcement(
+    interaction: discord.Interaction,
+    target: discord.Member,
+    infraction_type: str,
+    reason: str,
+):
+    guild = interaction.guild
+    if guild is None:
+        return
+
+    channel = discord.utils.get(guild.text_channels, name=INFRACTION_CHANNEL_NAME)
+    if channel is None:
+        print(
+            f"[infraction] No #{INFRACTION_CHANNEL_NAME} channel found in "
+            f"'{guild.name}'. Skipping announcement."
+        )
+        return
+
+    cfg = INFRACTION_TYPES[infraction_type]
+    embed = discord.Embed(
+        title=f"{cfg['emoji']} Infraction — {infraction_type}",
+        color=cfg["color"],
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="Member", value=target.mention, inline=True)
+    embed.add_field(name="Issued by", value=interaction.user.mention, inline=True)
+    embed.add_field(name="Type", value=infraction_type, inline=True)
+    embed.add_field(name="Reason", value=reason or "No reason provided", inline=False)
+    embed.set_footer(text=f"User ID: {target.id}")
+
+    try:
+        await channel.send(content=target.mention, embed=embed)
+    except discord.Forbidden:
+        print(
+            f"[infraction] Missing permission to send messages in "
+            f"#{channel.name} ({guild.name})."
+        )
+    except discord.HTTPException as e:
+        print(f"[infraction] Failed to send announcement: {e}")
+
+
+class InfractionTypeButton(discord.ui.Button):
+    def __init__(
+        self,
+        infraction_type: str,
+        target: discord.Member,
+        invoker: discord.Member,
+        reason: str,
+    ):
+        cfg = INFRACTION_TYPES[infraction_type]
+        super().__init__(
+            label=infraction_type,
+            emoji=cfg["emoji"],
+            style=cfg["style"],
+        )
+        self.infraction_type = infraction_type
+        self.target = target
+        self.invoker = invoker
+        self.reason = reason
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.invoker.id:
+            await interaction.response.send_message(
+                "Only the person who ran /infract can use these buttons.",
+                ephemeral=True,
+            )
+            return
+
+        for child in self.view.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=(
+                f"Issued **{self.infraction_type}** to {self.target.mention} ✓"
+            ),
+            view=self.view,
+        )
+        await send_infraction_announcement(
+            interaction, self.target, self.infraction_type, self.reason
+        )
+        await send_mod_log(
+            interaction,
+            f"received infraction ({self.infraction_type})",
+            self.target,
+            reason=self.reason,
+            color=INFRACTION_TYPES[self.infraction_type]["color"],
+        )
+
+
+class InfractionView(discord.ui.View):
+    def __init__(
+        self,
+        target: discord.Member,
+        invoker: discord.Member,
+        reason: str,
+    ):
+        super().__init__(timeout=120)
+        for infraction_type in INFRACTION_TYPES:
+            self.add_item(
+                InfractionTypeButton(infraction_type, target, invoker, reason)
+            )
+
+
+@bot.tree.command(
+    name="infract", description="Issue an infraction to a member"
+)
+@app_commands.describe(
+    member="The member to infract",
+    reason="Why are they being infracted?",
+)
+@has_allowed_role()
+async def infract(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    reason: str,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    if not isinstance(interaction.user, discord.Member):
+        await interaction.followup.send(
+            "This command can only be used in a server.", ephemeral=True
+        )
+        return
+
+    view = InfractionView(member, interaction.user, reason)
+    await interaction.followup.send(
+        content=(
+            f"Choose the infraction type for {member.mention}:\n"
+            f"**Reason:** {reason}"
+        ),
+        view=view,
+        ephemeral=True,
+    )
+
+
+@infract.error
+async def infract_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, Deputy Chief, Board of Chiefs."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        print(f"[infract.error] Could not respond to interaction: {error}")
 
 
 @bot.tree.command(name="embed", description="Create an embed message")
