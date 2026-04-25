@@ -433,9 +433,11 @@ class PromoteView(discord.ui.View):
 @app_commands.describe(member="The member to promote")
 @has_allowed_role()
 async def promote(interaction: discord.Interaction, member: discord.Member):
+    await interaction.response.defer(ephemeral=True)
+
     guild = interaction.guild
     if guild is None:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             "This command can only be used in a server.", ephemeral=True
         )
         return
@@ -456,7 +458,7 @@ async def promote(interaction: discord.Interaction, member: discord.Member):
     eligible.sort(key=lambda r: r.position, reverse=True)
 
     if not eligible:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"No roles available to promote {member.mention} to. "
             f"(They may already have all roles below your rank, or my role "
             f"isn't high enough to assign any.)",
@@ -469,7 +471,7 @@ async def promote(interaction: discord.Interaction, member: discord.Member):
     if len(eligible) > 25:
         extra = f"\n_Showing the top 25 of {len(eligible)} roles._"
 
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"Choose a role to promote {member.mention} to:{extra}",
         view=view,
         ephemeral=True,
@@ -488,10 +490,13 @@ async def promote_error(
     else:
         message = f"Something went wrong: {error}"
 
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(message, ephemeral=True)
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        print(f"[promote.error] Could not respond to interaction: {error}")
 
 
 @bot.tree.command(name="embed", description="Create an embed message")
