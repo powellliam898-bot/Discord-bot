@@ -20,7 +20,19 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 WELCOME_CHANNEL_NAME = os.environ.get("WELCOME_CHANNEL_NAME", "welcome")
 PROMOTION_CHANNEL_NAME = os.environ.get("PROMOTION_CHANNEL_NAME", "promotions")
-INFRACTION_CHANNEL_NAME = os.environ.get("INFRACTION_CHANNEL_NAME", "infractions")
+INFRACTION_CHANNEL_NAME = os.environ.get(
+    "INFRACTION_CHANNEL_NAME", "1496934927130693883"
+)
+
+
+def resolve_channel(guild: discord.Guild, identifier: str):
+    """Look up a text channel by ID (if numeric) or by name."""
+    if identifier.isdigit():
+        channel = guild.get_channel(int(identifier))
+        if isinstance(channel, discord.TextChannel):
+            return channel
+        return None
+    return discord.utils.get(guild.text_channels, name=identifier)
 
 ALLOWED_ROLES = {
     "chief of police",
@@ -43,11 +55,11 @@ async def send_mod_log(
     if guild is None:
         return
 
-    channel = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
+    channel = resolve_channel(guild, LOG_CHANNEL_NAME)
     if channel is None:
         print(
-            f"[mod-log] No #{LOG_CHANNEL_NAME} channel found in '{guild.name}'. "
-            f"Skipping log for {action}."
+            f"[mod-log] No channel matching '{LOG_CHANNEL_NAME}' found in "
+            f"'{guild.name}'. Skipping log for {action}."
         )
         return
 
@@ -100,7 +112,7 @@ async def on_ready():
 @bot.event
 async def on_member_join(member: discord.Member):
     guild = member.guild
-    channel = discord.utils.get(guild.text_channels, name=WELCOME_CHANNEL_NAME)
+    channel = resolve_channel(guild, WELCOME_CHANNEL_NAME)
     if channel is None:
         print(
             f"[welcome] No #{WELCOME_CHANNEL_NAME} channel found in "
@@ -383,7 +395,7 @@ async def send_promotion_announcement(
     if guild is None:
         return
 
-    channel = discord.utils.get(guild.text_channels, name=PROMOTION_CHANNEL_NAME)
+    channel = resolve_channel(guild, PROMOTION_CHANNEL_NAME)
     if channel is None:
         print(
             f"[promotion] No #{PROMOTION_CHANNEL_NAME} channel found in "
@@ -520,11 +532,11 @@ async def send_infraction_announcement(
     if guild is None:
         return
 
-    channel = discord.utils.get(guild.text_channels, name=INFRACTION_CHANNEL_NAME)
+    channel = resolve_channel(guild, INFRACTION_CHANNEL_NAME)
     if channel is None:
         print(
-            f"[infraction] No #{INFRACTION_CHANNEL_NAME} channel found in "
-            f"'{guild.name}'. Skipping announcement."
+            f"[infraction] No channel matching '{INFRACTION_CHANNEL_NAME}' "
+            f"found in '{guild.name}'. Skipping announcement."
         )
         return
 
