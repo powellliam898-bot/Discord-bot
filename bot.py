@@ -182,6 +182,138 @@ async def timeout(
     )
 
 
+class PromoteRoleButton(discord.ui.Button):
+    def __init__(
+        self,
+        role: discord.Role,
+        target: discord.Member,
+        invoker: discord.Member,
+    ):
+        label = role.name[:80]
+        super().__init__(label=label, style=discord.ButtonStyle.primary)
+        self.role = role
+        self.target = target
+        self.invoker = invoker
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.invoker.id:
+            await interaction.response.send_message(
+                "Only the person who ran /promote can use these buttons.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await self.target.add_roles(
+                self.role, reason=f"Promoted by {self.invoker}"
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                f"I can't assign **{self.role.name}** — my role must be above "
+                f"it in Server Settings → Roles, and I need **Manage Roles** "
+                f"permission.",
+                ephemeral=True,
+            )
+            return
+        except discord.HTTPException as e:
+            await interaction.response.send_message(
+                f"Discord rejected the role change: {e}", ephemeral=True
+            )
+            return
+
+        for child in self.view.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=f"Promoted {self.target.mention} → **{self.role.name}** ✓",
+            view=self.view,
+        )
+        await send_mod_log(
+            interaction,
+            "promoted",
+            self.target,
+            reason=f"Added role {self.role.mention}",
+            color=0x2ECC71,
+        )
+
+
+class PromoteView(discord.ui.View):
+    def __init__(
+        self,
+        target: discord.Member,
+        invoker: discord.Member,
+        roles: list[discord.Role],
+    ):
+        super().__init__(timeout=120)
+        for role in roles[:25]:
+            self.add_item(PromoteRoleButton(role, target, invoker))
+
+
+@bot.tree.command(name="promote", description="Promote a member by giving them a role")
+@app_commands.describe(member="The member to promote")
+@has_allowed_role()
+async def promote(interaction: discord.Interaction, member: discord.Member):
+    guild = interaction.guild
+    if guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.", ephemeral=True
+        )
+        return
+
+    invoker = interaction.user
+    bot_top = guild.me.top_role
+    invoker_top = invoker.top_role if isinstance(invoker, discord.Member) else None
+
+    eligible = [
+        r
+        for r in guild.roles
+        if not r.is_default()
+        and not r.managed
+        and r < bot_top
+        and (invoker_top is None or r < invoker_top)
+        and r not in member.roles
+    ]
+    eligible.sort(key=lambda r: r.position, reverse=True)
+
+    if not eligible:
+        await interaction.response.send_message(
+            f"No roles available to promote {member.mention} to. "
+            f"(They may already have all roles below your rank, or my role "
+            f"isn't high enough to assign any.)",
+            ephemeral=True,
+        )
+        return
+
+    view = PromoteView(member, invoker, eligible)
+    extra = ""
+    if len(eligible) > 25:
+        extra = f"\n_Showing the top 25 of {len(eligible)} roles._"
+
+    await interaction.response.send_message(
+        f"Choose a role to promote {member.mention} to:{extra}",
+        view=view,
+        ephemeral=True,
+    )
+
+
+@promote.error
+async def promote_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, Deputy Chief, Board of Chiefs."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.response.send_message(message, ephemeral=True)
+
+
 @bot.tree.command(name="embed", description="Create an embed message")
 @app_commands.describe(
     title="Embed title",
