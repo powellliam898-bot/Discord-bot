@@ -19,6 +19,7 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 WELCOME_CHANNEL_NAME = os.environ.get("WELCOME_CHANNEL_NAME", "welcome")
+PROMOTION_CHANNEL_NAME = os.environ.get("PROMOTION_CHANNEL_NAME", "promotions")
 
 ALLOWED_ROLES = {
     "chief of police",
@@ -365,6 +366,55 @@ class PromoteRoleButton(discord.ui.Button):
             reason=f"Added role {self.role.mention}",
             color=0x2ECC71,
         )
+        await send_promotion_announcement(
+            interaction, self.target, self.role
+        )
+
+
+async def send_promotion_announcement(
+    interaction: discord.Interaction,
+    target: discord.Member,
+    role: discord.Role,
+):
+    guild = interaction.guild
+    if guild is None:
+        return
+
+    channel = discord.utils.get(guild.text_channels, name=PROMOTION_CHANNEL_NAME)
+    if channel is None:
+        print(
+            f"[promotion] No #{PROMOTION_CHANNEL_NAME} channel found in "
+            f"'{guild.name}'. Skipping announcement."
+        )
+        return
+
+    embed = discord.Embed(
+        title="🎖️ Promotion Announcement",
+        description=(
+            f"Congratulations {target.mention}!\n"
+            f"You have been promoted to **{role.mention}**."
+        ),
+        color=0x2ECC71,
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="New Rank", value=role.mention, inline=True)
+    embed.add_field(
+        name="Promoted by",
+        value=interaction.user.mention,
+        inline=True,
+    )
+    embed.set_footer(text=f"User ID: {target.id}")
+
+    try:
+        await channel.send(content=target.mention, embed=embed)
+    except discord.Forbidden:
+        print(
+            f"[promotion] Missing permission to send messages in "
+            f"#{channel.name} ({guild.name})."
+        )
+    except discord.HTTPException as e:
+        print(f"[promotion] Failed to send announcement: {e}")
 
 
 class PromoteView(discord.ui.View):
