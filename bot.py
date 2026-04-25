@@ -17,7 +17,12 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-ALLOWED_ROLES = {"chief of police", "assistant chief", "deputy chief"}
+ALLOWED_ROLES = {
+    "chief of police",
+    "assistant chief",
+    "deputy chief",
+    "board of chiefs",
+}
 
 LOG_CHANNEL_NAME = os.environ.get("LOG_CHANNEL_NAME", "mod-logs")
 
@@ -182,7 +187,7 @@ async def restricted_command_error(
     if isinstance(error, app_commands.CheckFailure):
         message = (
             "You don't have permission to use this command. "
-            "It's restricted to: Chief of Police, Assistant Chief, Deputy Chief."
+            "It's restricted to: Chief of Police, Assistant Chief, Deputy Chief, Board of Chiefs."
         )
     else:
         message = f"Something went wrong: {error}"
