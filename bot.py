@@ -17,6 +17,18 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+ALLOWED_ROLES = {"chief of police", "assistant chief", "deputy chief"}
+
+
+def has_allowed_role():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        member = interaction.user
+        if not isinstance(member, discord.Member):
+            return False
+        return any(role.name.lower() in ALLOWED_ROLES for role in member.roles)
+
+    return app_commands.check(predicate)
+
 
 @bot.event
 async def on_ready():
@@ -41,7 +53,7 @@ async def ping_slash(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="kick", description="Kick a user")
-@app_commands.checks.has_permissions(kick_members=True)
+@has_allowed_role()
 async def kick(
     interaction: discord.Interaction,
     member: discord.Member,
@@ -52,7 +64,7 @@ async def kick(
 
 
 @bot.tree.command(name="ban", description="Ban a user")
-@app_commands.checks.has_permissions(ban_members=True)
+@has_allowed_role()
 async def ban(
     interaction: discord.Interaction,
     member: discord.Member,
@@ -63,7 +75,7 @@ async def ban(
 
 
 @bot.tree.command(name="timeout", description="Timeout a user (seconds)")
-@app_commands.checks.has_permissions(moderate_members=True)
+@has_allowed_role()
 async def timeout(
     interaction: discord.Interaction,
     member: discord.Member,
@@ -76,21 +88,13 @@ async def timeout(
     )
 
 
-@kick.error
-@ban.error
-@timeout.error
-async def mod_error(interaction: discord.Interaction, error):
-    await interaction.response.send_message(
-        "You don't have permission to use this command.", ephemeral=True
-    )
-
-
 @bot.tree.command(name="embed", description="Create an embed message")
 @app_commands.describe(
     title="Embed title",
     description="Embed description",
     color="Hex color (example: ff0000 for red)",
 )
+@has_allowed_role()
 async def embed(
     interaction: discord.Interaction,
     title: str,
@@ -110,6 +114,27 @@ async def embed(
     emb.set_footer(text=f"Requested by {interaction.user}")
 
     await interaction.response.send_message(embed=emb)
+
+
+@kick.error
+@ban.error
+@timeout.error
+@embed.error
+async def restricted_command_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, Deputy Chief."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.response.send_message(message, ephemeral=True)
 
 
 if __name__ == "__main__":
