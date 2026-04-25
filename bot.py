@@ -19,7 +19,9 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 WELCOME_CHANNEL_NAME = os.environ.get("WELCOME_CHANNEL_NAME", "welcome")
-PROMOTION_CHANNEL_NAME = os.environ.get("PROMOTION_CHANNEL_NAME", "promotions")
+PROMOTION_CHANNEL_NAME = os.environ.get(
+    "PROMOTION_CHANNEL_NAME", "1496934550553759920"
+)
 INFRACTION_CHANNEL_NAME = os.environ.get(
     "INFRACTION_CHANNEL_NAME", "1496934927130693883"
 )
