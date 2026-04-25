@@ -19,6 +19,53 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 ALLOWED_ROLES = {"chief of police", "assistant chief", "deputy chief"}
 
+LOG_CHANNEL_NAME = os.environ.get("LOG_CHANNEL_NAME", "mod-logs")
+
+
+async def send_mod_log(
+    interaction: discord.Interaction,
+    action: str,
+    target: discord.abc.User,
+    reason: str,
+    color: int,
+):
+    guild = interaction.guild
+    if guild is None:
+        return
+
+    channel = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
+    if channel is None:
+        print(
+            f"[mod-log] No #{LOG_CHANNEL_NAME} channel found in '{guild.name}'. "
+            f"Skipping log for {action}."
+        )
+        return
+
+    log_embed = discord.Embed(
+        title=f"Member {action}",
+        color=color,
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    log_embed.add_field(
+        name="User", value=f"{target.mention} (`{target}` — {target.id})", inline=False
+    )
+    log_embed.add_field(
+        name="Moderator",
+        value=f"{interaction.user.mention} (`{interaction.user}`)",
+        inline=False,
+    )
+    log_embed.add_field(name="Reason", value=reason or "No reason", inline=False)
+
+    try:
+        await channel.send(embed=log_embed)
+    except discord.Forbidden:
+        print(
+            f"[mod-log] Missing permission to send messages in "
+            f"#{channel.name} ({guild.name})."
+        )
+    except discord.HTTPException as e:
+        print(f"[mod-log] Failed to send log: {e}")
+
 
 def has_allowed_role():
     async def predicate(interaction: discord.Interaction) -> bool:
@@ -61,6 +108,7 @@ async def kick(
 ):
     await member.kick(reason=reason)
     await interaction.response.send_message(f"Kicked {member.mention}")
+    await send_mod_log(interaction, "kicked", member, reason, color=0xE67E22)
 
 
 @bot.tree.command(name="ban", description="Ban a user")
@@ -72,6 +120,7 @@ async def ban(
 ):
     await member.ban(reason=reason)
     await interaction.response.send_message(f"Banned {member.mention}")
+    await send_mod_log(interaction, "banned", member, reason, color=0xE74C3C)
 
 
 @bot.tree.command(name="timeout", description="Timeout a user (seconds)")
@@ -85,6 +134,13 @@ async def timeout(
     await member.timeout(until)
     await interaction.response.send_message(
         f"Timed out {member.mention} for {seconds}s"
+    )
+    await send_mod_log(
+        interaction,
+        f"timed out for {seconds}s",
+        member,
+        reason="No reason",
+        color=0xF1C40F,
     )
 
 
