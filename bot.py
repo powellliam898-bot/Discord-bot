@@ -146,6 +146,50 @@ async def ping_slash(interaction: discord.Interaction):
     )
 
 
+BOT_START_TIME = datetime.datetime.now(datetime.timezone.utc)
+
+
+def _format_uptime(delta: datetime.timedelta) -> str:
+    total_seconds = int(delta.total_seconds())
+    days, rem = divmod(total_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
+@bot.tree.command(name="status", description="Show bot uptime and latency")
+async def status(interaction: discord.Interaction):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    uptime = now - BOT_START_TIME
+    latency_ms = round(bot.latency * 1000)
+
+    embed = discord.Embed(
+        title="Bot Status",
+        color=0x2ECC71,
+        timestamp=now,
+    )
+    embed.add_field(name="Status", value="🟢 Online", inline=True)
+    embed.add_field(name="Latency", value=f"{latency_ms} ms", inline=True)
+    embed.add_field(name="Uptime", value=_format_uptime(uptime), inline=True)
+    embed.add_field(
+        name="Online since",
+        value=discord.utils.format_dt(BOT_START_TIME, style="F"),
+        inline=False,
+    )
+    embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
+    embed.set_footer(text=f"Logged in as {bot.user}")
+
+    await interaction.response.send_message(embed=embed)
+
+
 async def _explain_forbidden(action: str, member: discord.Member) -> str:
     return (
         f"I couldn't {action} {member.mention}. This is usually one of:\n"
