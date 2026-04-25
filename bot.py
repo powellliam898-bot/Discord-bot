@@ -85,5 +85,32 @@ async def mod_error(interaction: discord.Interaction, error):
     )
 
 
+@bot.tree.command(name="embed", description="Create an embed message")
+@app_commands.describe(
+    title="Embed title",
+    description="Embed description",
+    color="Hex color (example: ff0000 for red)",
+)
+async def embed(
+    interaction: discord.Interaction,
+    title: str,
+    description: str,
+    color: str = "2f3136",
+):
+    try:
+        color_int = int(color, 16)
+    except ValueError:
+        color_int = 0x2F3136
+
+    emb = discord.Embed(
+        title=title,
+        description=description,
+        color=color_int,
+    )
+    emb.set_footer(text=f"Requested by {interaction.user}")
+
+    await interaction.response.send_message(embed=emb)
+
+
 if __name__ == "__main__":
     bot.run(TOKEN)
