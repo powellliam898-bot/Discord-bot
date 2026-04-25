@@ -551,6 +551,31 @@ async def send_infraction_announcement(
     except discord.HTTPException as e:
         print(f"[infraction] Failed to send announcement: {e}")
 
+    dm_embed = discord.Embed(
+        title=f"{cfg['emoji']} You received an infraction",
+        description=(
+            f"You have been issued an infraction in **{guild.name}**."
+        ),
+        color=cfg["color"],
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    dm_embed.add_field(name="Type", value=infraction_type, inline=True)
+    dm_embed.add_field(name="Issued by", value=str(interaction.user), inline=True)
+    dm_embed.add_field(
+        name="Reason", value=reason or "No reason provided", inline=False
+    )
+    dm_embed.set_footer(text=f"Server: {guild.name}")
+
+    try:
+        await target.send(embed=dm_embed)
+    except discord.Forbidden:
+        print(
+            f"[infraction] Could not DM {target} — they have DMs closed "
+            f"or block the bot."
+        )
+    except discord.HTTPException as e:
+        print(f"[infraction] Failed to DM {target}: {e}")
+
 
 class InfractionTypeButton(discord.ui.Button):
     def __init__(
