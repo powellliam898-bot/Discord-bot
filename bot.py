@@ -1093,6 +1093,7 @@ async def run_dm_questionnaire(
     review_channel_identifier: str,
     color: int,
     review_view: discord.ui.View | None = None,
+    ping_role_name: str | None = None,
 ):
     try:
         dm = await user.create_dm()
@@ -1176,11 +1177,22 @@ async def run_dm_questionnaire(
         )
     submission.set_footer(text=f"User ID: {user.id}")
 
+    ping_content = None
+    if ping_role_name:
+        ping_role = discord.utils.find(
+            lambda r: r.name.lower() == ping_role_name.lower(), guild.roles
+        )
+        if ping_role is not None:
+            ping_content = ping_role.mention
+
     try:
+        kwargs = {"embed": submission}
         if review_view is not None:
-            await channel.send(embed=submission, view=review_view)
-        else:
-            await channel.send(embed=submission)
+            kwargs["view"] = review_view
+        if ping_content:
+            kwargs["content"] = ping_content
+            kwargs["allowed_mentions"] = discord.AllowedMentions(roles=True)
+        await channel.send(**kwargs)
         await dm.send(
             f"✅ Your **{title}** has been submitted! Staff will review it shortly."
         )
@@ -1216,6 +1228,7 @@ async def apply(interaction: discord.Interaction):
         APPLICATION_CHANNEL_NAME,
         0x3498DB,
         review_view=ApplicationReviewView(),
+        ping_role_name="Supervisor",
     )
 
 
@@ -1242,6 +1255,7 @@ async def callsign(interaction: discord.Interaction):
         CALLSIGN_CHANNEL_NAME,
         0x9B59B6,
         review_view=CallsignReviewView(),
+        ping_role_name="Supervisor",
     )
 
 
