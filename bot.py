@@ -292,6 +292,8 @@ async def help_command(interaction: discord.Interaction):
             "**/timeout** `member` `seconds` — Timeout a member\n"
             "**/purge** `amount` — Bulk-delete recent messages (1-100)\n"
             "**/slowmode** `seconds` — Set channel slowmode (0 = off, max 21600)\n"
+            "**/lock** — Lock this channel (members can't post)\n"
+            "**/unlock** — Unlock this channel\n"
             "**/nickname** `member` `[nickname]` — Change a member's nickname\n"
             "**/promote** `member` — Promote a member by clicking a role button\n"
             "**/infract** `member` `reason` — Issue an infraction "
@@ -494,6 +496,140 @@ async def purge_error(
             await interaction.response.send_message(message, ephemeral=True)
     except discord.NotFound:
         print(f"[purge.error] Could not respond to interaction: {error}")
+
+
+async def _set_channel_lock(
+    interaction: discord.Interaction, locked: bool
+):
+    if not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message(
+            "This command only works in text channels.", ephemeral=True
+        )
+        return
+
+    guild = interaction.guild
+    if guild is None:
+        await interaction.response.send_message(
+            "This command only works in a server.", ephemeral=True
+        )
+        return
+
+    everyone = guild.default_role
+    overwrite = interaction.channel.overwrites_for(everyone)
+    overwrite.send_messages = False if locked else None
+
+    try:
+        await interaction.channel.set_permissions(
+            everyone,
+            overwrite=overwrite,
+            reason=(
+                f"Channel {'locked' if locked else 'unlocked'} by "
+                f"{interaction.user}"
+            ),
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I need the **Manage Channels** permission in this channel.",
+            ephemeral=True,
+        )
+        return
+    except discord.HTTPException as e:
+        await interaction.response.send_message(
+            f"Discord rejected the change: {e}", ephemeral=True
+        )
+        return
+
+    if locked:
+        title = "🔒 Channel locked"
+        notice = (
+            f"{interaction.channel.mention} has been **locked**. "
+            f"Only staff can post here now."
+        )
+        color = 0xE74C3C
+    else:
+        title = "🔓 Channel unlocked"
+        notice = (
+            f"{interaction.channel.mention} has been **unlocked**. "
+            f"Members can post again."
+        )
+        color = 0x2ECC71
+
+    await interaction.response.send_message(notice)
+
+    log_channel = resolve_channel(guild, LOG_CHANNEL_NAME)
+    if log_channel is not None:
+        log_embed = discord.Embed(
+            title=title,
+            color=color,
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+            description=(
+                f"**{interaction.user.mention}** "
+                f"{'locked' if locked else 'unlocked'} "
+                f"{interaction.channel.mention}."
+            ),
+        )
+        try:
+            await log_channel.send(embed=log_embed)
+        except discord.HTTPException:
+            pass
+
+
+@bot.tree.command(
+    name="lock", description="Lock this channel so members can't post"
+)
+@has_allowed_role()
+async def lock(interaction: discord.Interaction):
+    await _set_channel_lock(interaction, locked=True)
+
+
+@lock.error
+async def lock_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, "
+            "Deputy Chief, Board of Chiefs."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        print(f"[lock.error] Could not respond to interaction: {error}")
+
+
+@bot.tree.command(
+    name="unlock", description="Unlock this channel so members can post again"
+)
+@has_allowed_role()
+async def unlock(interaction: discord.Interaction):
+    await _set_channel_lock(interaction, locked=False)
+
+
+@unlock.error
+async def unlock_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, "
+            "Deputy Chief, Board of Chiefs."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        print(f"[unlock.error] Could not respond to interaction: {error}")
 
 
 @bot.tree.command(
