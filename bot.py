@@ -1,4 +1,5 @@
 import os
+import asyncio
 import datetime
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -46,6 +47,30 @@ PROMOTION_CHANNEL_NAME = os.environ.get(
 INFRACTION_CHANNEL_NAME = os.environ.get(
     "INFRACTION_CHANNEL_NAME", "1496934927130693883"
 )
+APPLICATION_CHANNEL_NAME = os.environ.get(
+    "APPLICATION_CHANNEL_NAME", "applications"
+)
+CALLSIGN_CHANNEL_NAME = os.environ.get(
+    "CALLSIGN_CHANNEL_NAME", "callsign-requests"
+)
+
+APPLICATION_QUESTIONS = [
+    "What is your full in-game name?",
+    "What is your age?",
+    "What is your Discord username?",
+    "What is your timezone?",
+    "How many hours per week can you be active?",
+    "Do you have previous law enforcement roleplay experience? If yes, where?",
+    "Why do you want to join the LAPD?",
+    "Have you read and agree to the server rules? (yes/no)",
+]
+
+CALLSIGN_QUESTIONS = [
+    "What is your in-game name?",
+    "What is your current rank?",
+    "What callsign would you like? (e.g. 1-Adam-12)",
+    "Why do you want this specific callsign?",
+]
 
 
 def resolve_channel(guild: discord.Guild, identifier: str):
@@ -216,7 +241,9 @@ async def help_command(interaction: discord.Interaction):
             "**/help** — Show this list of commands\n"
             "**/ping** — Check the bot's latency\n"
             "**/status** — Show bot uptime, latency, and server count\n"
-            "**/embed** `title` `description` `[color]` — Post a custom embed message"
+            "**/embed** `title` `description` `[color]` — Post a custom embed message\n"
+            "**/apply** — Start a department application (questions sent via DM)\n"
+            "**/callsign** — Request a callsign (questions sent via DM)"
         ),
         inline=False,
     )
@@ -843,6 +870,154 @@ async def infract_error(
             await interaction.response.send_message(message, ephemeral=True)
     except discord.NotFound:
         print(f"[infract.error] Could not respond to interaction: {error}")
+
+
+async def run_dm_questionnaire(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    title: str,
+    questions: list[str],
+    review_channel_identifier: str,
+    color: int,
+):
+    try:
+        dm = await user.create_dm()
+        await dm.send(
+            f"**{title}**\n"
+            f"Please answer each question below.\n"
+            f"Type `cancel` at any time to stop. You have 5 minutes per question."
+        )
+    except discord.Forbidden:
+        try:
+            await interaction.followup.send(
+                "I couldn't DM you. Please open your DMs from server members "
+                "(User Settings → Privacy & Safety) and run the command again.",
+                ephemeral=True,
+            )
+        except discord.HTTPException:
+            pass
+        return
+    except discord.HTTPException as e:
+        print(f"[questionnaire] Failed to open DM with {user}: {e}")
+        return
+
+    answers: list[tuple[str, str]] = []
+    for index, question in enumerate(questions, start=1):
+        await dm.send(f"**Question {index}/{len(questions)}:** {question}")
+        try:
+            msg = await bot.wait_for(
+                "message",
+                check=lambda m: m.author.id == user.id
+                and isinstance(m.channel, discord.DMChannel),
+                timeout=300,
+            )
+        except asyncio.TimeoutError:
+            await dm.send(
+                "⏰ Timed out waiting for an answer. Run the command again to retry."
+            )
+            return
+
+        content = msg.content.strip()
+        if content.lower() == "cancel":
+            await dm.send("❌ Cancelled. Run the command again if you change your mind.")
+            return
+
+        answers.append((question, content if content else "—"))
+
+    guild = interaction.guild
+    if guild is None:
+        await dm.send("Submission failed: not in a server context.")
+        return
+
+    channel = resolve_channel(guild, review_channel_identifier)
+    if channel is None:
+        await dm.send(
+            f"Submission failed: review channel `{review_channel_identifier}` "
+            f"not found. Please contact a moderator."
+        )
+        return
+
+    submission = discord.Embed(
+        title=title,
+        color=color,
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    submission.set_thumbnail(url=user.display_avatar.url)
+    submission.add_field(
+        name="Submitted by",
+        value=f"{user.mention} (`{user}` — {user.id})",
+        inline=False,
+    )
+    for question, answer in answers:
+        submission.add_field(
+            name=question[:256],
+            value=answer[:1024],
+            inline=False,
+        )
+    submission.set_footer(text=f"User ID: {user.id}")
+
+    try:
+        await channel.send(embed=submission)
+        await dm.send(
+            f"✅ Your **{title}** has been submitted! Staff will review it shortly."
+        )
+    except discord.Forbidden:
+        await dm.send(
+            "Submission failed: I don't have permission to post in the "
+            "review channel. Please contact a moderator."
+        )
+    except discord.HTTPException as e:
+        await dm.send(f"Submission failed: {e}")
+
+
+@bot.tree.command(
+    name="apply", description="Apply to join the department (questions sent via DM)"
+)
+async def apply(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    if not isinstance(interaction.user, discord.Member):
+        await interaction.followup.send(
+            "This command only works in a server.", ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        "📬 Check your DMs! I've started your application.", ephemeral=True
+    )
+    await run_dm_questionnaire(
+        interaction,
+        interaction.user,
+        "Department Application",
+        APPLICATION_QUESTIONS,
+        APPLICATION_CHANNEL_NAME,
+        0x3498DB,
+    )
+
+
+@bot.tree.command(
+    name="callsign", description="Request a callsign (questions sent via DM)"
+)
+async def callsign(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    if not isinstance(interaction.user, discord.Member):
+        await interaction.followup.send(
+            "This command only works in a server.", ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        "📬 Check your DMs! I've started your callsign request.", ephemeral=True
+    )
+    await run_dm_questionnaire(
+        interaction,
+        interaction.user,
+        "Callsign Request",
+        CALLSIGN_QUESTIONS,
+        CALLSIGN_CHANNEL_NAME,
+        0x9B59B6,
+    )
 
 
 @bot.tree.command(name="embed", description="Create an embed message")
