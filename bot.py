@@ -1478,7 +1478,7 @@ async def apply(interaction: discord.Interaction):
         APPLICATION_CHANNEL_NAME,
         0x3498DB,
         review_view=ApplicationReviewView(),
-        ping_role_name="Supervisor",
+        ping_role_name="▬▬▬▬▬Supervisor▬▬▬▬▬▬▬",
     )
 
 
@@ -1505,7 +1505,7 @@ async def callsign(interaction: discord.Interaction):
         CALLSIGN_CHANNEL_NAME,
         0x9B59B6,
         review_view=CallsignReviewView(),
-        ping_role_name="Supervisor",
+        ping_role_name="▬▬▬▬▬Supervisor▬▬▬▬▬▬▬",
     )
 
 
