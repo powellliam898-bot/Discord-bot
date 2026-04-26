@@ -1,5 +1,7 @@
 import os
 import datetime
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import discord
 from discord import app_commands
@@ -17,6 +19,25 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Keep-alive server to prevent bot from going idle
+class KeepAliveHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        # Suppress log messages
+        pass
+
+def run_keep_alive_server():
+    server = HTTPServer(("0.0.0.0", 8000), KeepAliveHandler)
+    server.serve_forever()
+
+# Start the keep-alive server in a background thread
+keep_alive_thread = threading.Thread(target=run_keep_alive_server, daemon=True)
+keep_alive_thread.start()
 
 WELCOME_CHANNEL_NAME = os.environ.get("WELCOME_CHANNEL_NAME", "welcome")
 PROMOTION_CHANNEL_NAME = os.environ.get(
