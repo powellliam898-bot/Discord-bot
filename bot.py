@@ -121,7 +121,7 @@ ALLOWED_ROLES = {
     "board of chiefs",
 }
 
-LOG_CHANNEL_NAME = os.environ.get("LOG_CHANNEL_NAME", "mod-logs")
+LOG_CHANNEL_NAME = os.environ.get("LOG_CHANNEL_NAME", "1497866935243899014")
 
 
 async def send_mod_log(
