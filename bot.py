@@ -101,11 +101,6 @@ CALLSIGN_QUESTIONS = [
     ("What is your current rank?", "Current rank"),
     ("What is your badge number? (e.g. LA-512)", "Badge number"),
     (CALLSIGN_FORMAT_GUIDE, "Requested callsign"),
-    (
-        "What is your time zone? (GMT [+/-] format, e.g. GMT-7)\n"
-        "If you already have a time zone role, just type `existing`.",
-        "Time zone",
-    ),
     ("Why do you want this specific callsign?", "Reason"),
 ]
 
