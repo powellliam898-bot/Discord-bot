@@ -290,6 +290,8 @@ async def help_command(interaction: discord.Interaction):
             "**/kick** `member` `[reason]` — Kick a member\n"
             "**/ban** `member` `[reason]` — Ban a member\n"
             "**/timeout** `member` `seconds` — Timeout a member\n"
+            "**/purge** `amount` — Bulk-delete recent messages (1-100)\n"
+            "**/nickname** `member` `[nickname]` — Change a member's nickname\n"
             "**/promote** `member` — Promote a member by clicking a role button\n"
             "**/infract** `member` `reason` — Issue an infraction "
             "(Demotion / Written Warning / Warning / Notice)"
@@ -412,6 +414,167 @@ async def timeout(
         reason="No reason",
         color=0xF1C40F,
     )
+
+
+@bot.tree.command(
+    name="purge", description="Bulk-delete recent messages in this channel"
+)
+@app_commands.describe(amount="How many messages to delete (1-100)")
+@has_allowed_role()
+async def purge(interaction: discord.Interaction, amount: int):
+    if amount < 1 or amount > 100:
+        await interaction.response.send_message(
+            "Amount must be between 1 and 100.", ephemeral=True
+        )
+        return
+
+    if not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message(
+            "This command only works in text channels.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        deleted = await interaction.channel.purge(limit=amount)
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "I need the **Manage Messages** permission in this channel.",
+            ephemeral=True,
+        )
+        return
+    except discord.HTTPException as e:
+        await interaction.followup.send(
+            f"Discord rejected the purge: {e}", ephemeral=True
+        )
+        return
+
+    await interaction.followup.send(
+        f"🧹 Deleted **{len(deleted)}** message(s) in {interaction.channel.mention}.",
+        ephemeral=True,
+    )
+
+    if interaction.guild is not None:
+        log_channel = resolve_channel(interaction.guild, LOG_CHANNEL_NAME)
+        if log_channel is not None:
+            log_embed = discord.Embed(
+                title="Messages purged",
+                color=0x95A5A6,
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+                description=(
+                    f"**{interaction.user.mention}** deleted "
+                    f"**{len(deleted)}** message(s) in "
+                    f"{interaction.channel.mention}."
+                ),
+            )
+            try:
+                await log_channel.send(embed=log_embed)
+            except discord.HTTPException:
+                pass
+
+
+@purge.error
+async def purge_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, "
+            "Deputy Chief, Board of Chiefs."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        print(f"[purge.error] Could not respond to interaction: {error}")
+
+
+@bot.tree.command(
+    name="nickname", description="Change a member's server nickname"
+)
+@app_commands.describe(
+    member="The member whose nickname to change",
+    nickname="New nickname (leave blank to reset to their username)",
+)
+@has_allowed_role()
+async def nickname(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    nickname: str = "",
+):
+    new_nick = nickname.strip() or None
+    old_nick = member.display_name
+
+    if new_nick is not None and len(new_nick) > 32:
+        await interaction.response.send_message(
+            "Nicknames can be at most 32 characters.", ephemeral=True
+        )
+        return
+
+    try:
+        await member.edit(
+            nick=new_nick,
+            reason=f"Nickname changed by {interaction.user}",
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            f"I can't change {member.mention}'s nickname. My role must be "
+            f"**above** theirs in Server Settings → Roles, and I need the "
+            f"**Manage Nicknames** permission.",
+            ephemeral=True,
+        )
+        return
+    except discord.HTTPException as e:
+        await interaction.response.send_message(
+            f"Discord rejected the change: {e}", ephemeral=True
+        )
+        return
+
+    if new_nick is None:
+        msg = f"✏️ Reset {member.mention}'s nickname (was **{old_nick}**)."
+    else:
+        msg = (
+            f"✏️ Changed {member.mention}'s nickname: "
+            f"**{old_nick}** → **{new_nick}**."
+        )
+    await interaction.response.send_message(msg)
+
+    await send_mod_log(
+        interaction,
+        "nickname changed",
+        member,
+        reason=(
+            f"`{old_nick}` → `{new_nick or member.name}`"
+        ),
+        color=0x3498DB,
+    )
+
+
+@nickname.error
+async def nickname_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, "
+            "Deputy Chief, Board of Chiefs."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        print(f"[nickname.error] Could not respond to interaction: {error}")
 
 
 class PromoteRoleButton(discord.ui.Button):
