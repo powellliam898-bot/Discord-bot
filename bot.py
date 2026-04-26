@@ -55,21 +55,58 @@ CALLSIGN_CHANNEL_NAME = os.environ.get(
 )
 
 APPLICATION_QUESTIONS = [
-    "What is your full in-game name?",
-    "What is your age?",
-    "What is your Discord username?",
-    "What is your timezone?",
-    "How many hours per week can you be active?",
-    "Do you have previous law enforcement roleplay experience? If yes, where?",
-    "Why do you want to join the LAPD?",
-    "Have you read and agree to the server rules? (yes/no)",
+    ("What is your full in-game name?", "In-game name"),
+    ("What is your age?", "Age"),
+    ("What is your Discord username?", "Discord username"),
+    ("What is your time zone?", "Time zone"),
+    ("How many hours per week can you be active?", "Weekly availability"),
+    (
+        "Do you have previous law enforcement roleplay experience? If yes, where?",
+        "Prior LEO experience",
+    ),
+    ("Why do you want to join the LAPD?", "Why LAPD?"),
+    ("Have you read and agree to the server rules? (yes/no)", "Agrees to rules"),
 ]
 
+CALLSIGN_FORMAT_GUIDE = (
+    "What callsign would you like?\n\n"
+    "**Badge Number Format**\n"
+    "`LA-0XX` Chief of Police  |  `LA-1XX` Assistant Chief\n"
+    "`LA-2XX` Deputy Chief / Commander  |  `LA-3XX` Captain\n"
+    "`LA-4XX` Lieutenant  |  `LA-5XX` Sergeant  |  `LA-6XX` Officer\n\n"
+    "**In-game Callsign Format**\n"
+    "Chief of Police: `X1-[UNIT]`\n"
+    "Assistant Chief: `X2-[UNIT]`\n"
+    "Deputy Chief: `X3-[UNIT]`\n"
+    "Commander: `X4-[UNIT]`\n"
+    "Captain: `X5-[UNIT]`\n"
+    "Lieutenant II: `X6-[UNIT]`\n"
+    "Lieutenant I: `X7-[UNIT]`\n"
+    "Sergeant II: `X8-[UNIT]`\n"
+    "Sergeant I: `X9-[UNIT]`\n"
+    "Officer III+I: `X10-[UNIT]`\n"
+    "Officer III: `X11-[UNIT]`\n"
+    "Officer II: `X12-[UNIT]`\n"
+    "Officer I: `X13-[UNIT]`\n\n"
+    "**X codes**\n"
+    "A (Adam) — 2-man Patrol  |  L (Lincoln) — 1-man Patrol\n"
+    "D — Detective  |  M — Metropolitan  |  S — SWAT\n"
+    "T — Traffic  |  E — Event / Training\n\n"
+    "Unit number = last 3 digits of your badge number.\n"
+    "Officers III+I and below must use a 2-digit unit number."
+)
+
 CALLSIGN_QUESTIONS = [
-    "What is your in-game name?",
-    "What is your current rank?",
-    "What callsign would you like? (e.g. 1-Adam-12)",
-    "Why do you want this specific callsign?",
+    ("What is your in-game name?", "In-game name"),
+    ("What is your current rank?", "Current rank"),
+    ("What is your badge number? (e.g. LA-512)", "Badge number"),
+    (CALLSIGN_FORMAT_GUIDE, "Requested callsign"),
+    (
+        "What is your time zone? (GMT [+/-] format, e.g. GMT-7)\n"
+        "If you already have a time zone role, just type `existing`.",
+        "Time zone",
+    ),
+    ("Why do you want this specific callsign?", "Reason"),
 ]
 
 
@@ -1001,7 +1038,7 @@ class CallsignReviewView(discord.ui.View):
             self,
             "Callsign Request",
             accepted=True,
-            summary_field_keywords=["callsign", "would you like"],
+            summary_field_keywords=["requested", "callsign"],
         )
 
     @discord.ui.button(
@@ -1018,7 +1055,7 @@ class CallsignReviewView(discord.ui.View):
             self,
             "Callsign Request",
             accepted=False,
-            summary_field_keywords=["callsign", "would you like"],
+            summary_field_keywords=["requested", "callsign"],
         )
 
 
@@ -1085,7 +1122,13 @@ async def run_dm_questionnaire(
 
     answers: list[tuple[str, str]] = []
     for index, question in enumerate(questions, start=1):
-        await dm.send(f"**Question {index}/{len(questions)}:** {question}")
+        if isinstance(question, tuple):
+            prompt_text, field_label = question
+        else:
+            prompt_text = question
+            field_label = question
+
+        await dm.send(f"**Question {index}/{len(questions)}:** {prompt_text}")
         try:
             msg = await bot.wait_for(
                 "message",
@@ -1104,7 +1147,7 @@ async def run_dm_questionnaire(
             await dm.send("❌ Cancelled. Run the command again if you change your mind.")
             return
 
-        answers.append((question, content if content else "—"))
+        answers.append((field_label, content if content else "—"))
 
     guild = interaction.guild
     if guild is None:
@@ -1130,9 +1173,9 @@ async def run_dm_questionnaire(
         value=f"{user.mention} (`{user}` — {user.id})",
         inline=False,
     )
-    for question, answer in answers:
+    for field_label, answer in answers:
         submission.add_field(
-            name=question[:256],
+            name=field_label[:256],
             value=answer[:1024],
             inline=False,
         )
