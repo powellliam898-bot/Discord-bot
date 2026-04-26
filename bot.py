@@ -291,6 +291,7 @@ async def help_command(interaction: discord.Interaction):
             "**/ban** `member` `[reason]` — Ban a member\n"
             "**/timeout** `member` `seconds` — Timeout a member\n"
             "**/purge** `amount` — Bulk-delete recent messages (1-100)\n"
+            "**/slowmode** `seconds` — Set channel slowmode (0 = off, max 21600)\n"
             "**/nickname** `member` `[nickname]` — Change a member's nickname\n"
             "**/promote** `member` — Promote a member by clicking a role button\n"
             "**/infract** `member` `reason` — Issue an infraction "
@@ -493,6 +494,92 @@ async def purge_error(
             await interaction.response.send_message(message, ephemeral=True)
     except discord.NotFound:
         print(f"[purge.error] Could not respond to interaction: {error}")
+
+
+@bot.tree.command(
+    name="slowmode",
+    description="Set slowmode on this channel (0 to disable, max 21600 = 6h)",
+)
+@app_commands.describe(
+    seconds="Slowmode delay in seconds (0 to disable, max 21600)"
+)
+@has_allowed_role()
+async def slowmode(interaction: discord.Interaction, seconds: int):
+    if seconds < 0 or seconds > 21600:
+        await interaction.response.send_message(
+            "Seconds must be between 0 and 21600 (6 hours).", ephemeral=True
+        )
+        return
+
+    if not isinstance(interaction.channel, discord.TextChannel):
+        await interaction.response.send_message(
+            "This command only works in text channels.", ephemeral=True
+        )
+        return
+
+    try:
+        await interaction.channel.edit(
+            slowmode_delay=seconds,
+            reason=f"Slowmode set by {interaction.user}",
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I need the **Manage Channels** permission in this channel.",
+            ephemeral=True,
+        )
+        return
+    except discord.HTTPException as e:
+        await interaction.response.send_message(
+            f"Discord rejected the change: {e}", ephemeral=True
+        )
+        return
+
+    if seconds == 0:
+        msg = f"🐢 Slowmode disabled in {interaction.channel.mention}."
+    else:
+        msg = (
+            f"🐢 Slowmode set to **{seconds}s** in "
+            f"{interaction.channel.mention}."
+        )
+    await interaction.response.send_message(msg)
+
+    if interaction.guild is not None:
+        log_channel = resolve_channel(interaction.guild, LOG_CHANNEL_NAME)
+        if log_channel is not None:
+            log_embed = discord.Embed(
+                title="Slowmode changed",
+                color=0x95A5A6,
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+                description=(
+                    f"**{interaction.user.mention}** set slowmode to "
+                    f"**{seconds}s** in {interaction.channel.mention}."
+                ),
+            )
+            try:
+                await log_channel.send(embed=log_embed)
+            except discord.HTTPException:
+                pass
+
+
+@slowmode.error
+async def slowmode_error(
+    interaction: discord.Interaction, error: app_commands.AppCommandError
+):
+    if isinstance(error, app_commands.CheckFailure):
+        message = (
+            "You don't have permission to use this command. "
+            "It's restricted to: Chief of Police, Assistant Chief, "
+            "Deputy Chief, Board of Chiefs."
+        )
+    else:
+        message = f"Something went wrong: {error}"
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        print(f"[slowmode.error] Could not respond to interaction: {error}")
 
 
 @bot.tree.command(
