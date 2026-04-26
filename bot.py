@@ -544,6 +544,83 @@ INFRACTION_TYPES = {
     "Notice": {"color": 0x3498DB, "emoji": "📌", "style": discord.ButtonStyle.secondary},
 }
 
+WARNING_ROLE_NAMES = ["Warning 1", "Warning 2", "Warning 3"]
+
+
+class WarningRoleButton(discord.ui.Button):
+    def __init__(
+        self,
+        role: discord.Role,
+        target: discord.Member,
+        invoker: discord.Member,
+        reason: str,
+    ):
+        super().__init__(
+            label=role.name[:80],
+            style=discord.ButtonStyle.danger,
+            emoji="⚠️",
+        )
+        self.role = role
+        self.target = target
+        self.invoker = invoker
+        self.reason = reason
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.invoker.id:
+            await interaction.response.send_message(
+                "Only the person who issued the warning can use these buttons.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await self.target.add_roles(
+                self.role, reason=f"Warning issued by {self.invoker}: {self.reason}"
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                f"I can't assign **{self.role.name}** — my role must be above "
+                f"it in Server Settings → Roles, and I need **Manage Roles** "
+                f"permission.",
+                ephemeral=True,
+            )
+            return
+        except discord.HTTPException as e:
+            await interaction.response.send_message(
+                f"Discord rejected the role change: {e}", ephemeral=True
+            )
+            return
+
+        for child in self.view.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=(
+                f"Added **{self.role.name}** to {self.target.mention} ✓"
+            ),
+            view=self.view,
+        )
+        await send_mod_log(
+            interaction,
+            "warning role added",
+            self.target,
+            reason=f"Added {self.role.mention} ({self.reason})",
+            color=0xF1C40F,
+        )
+
+
+class WarningRoleView(discord.ui.View):
+    def __init__(
+        self,
+        roles: list[discord.Role],
+        target: discord.Member,
+        invoker: discord.Member,
+        reason: str,
+    ):
+        super().__init__(timeout=120)
+        for role in roles:
+            self.add_item(WarningRoleButton(role, target, invoker, reason))
+
 
 async def send_infraction_announcement(
     interaction: discord.Interaction,
@@ -658,6 +735,47 @@ class InfractionTypeButton(discord.ui.Button):
             reason=self.reason,
             color=INFRACTION_TYPES[self.infraction_type]["color"],
         )
+
+        if self.infraction_type == "Warning" and interaction.guild is not None:
+            warning_roles = []
+            missing = []
+            for role_name in WARNING_ROLE_NAMES:
+                role = discord.utils.get(interaction.guild.roles, name=role_name)
+                if role is not None:
+                    warning_roles.append(role)
+                else:
+                    missing.append(role_name)
+
+            if not warning_roles:
+                await interaction.followup.send(
+                    "Couldn't find any of these warning roles in the server: "
+                    + ", ".join(f"`{n}`" for n in WARNING_ROLE_NAMES)
+                    + ". Create them (exact names) and try again.",
+                    ephemeral=True,
+                )
+                return
+
+            picker_embed = discord.Embed(
+                title="⚠️ Add a warning role",
+                description=(
+                    f"Pick which warning role to add to {self.target.mention}."
+                ),
+                color=0xF1C40F,
+            )
+            picker_embed.add_field(name="Reason", value=self.reason, inline=False)
+            if missing:
+                picker_embed.add_field(
+                    name="Missing roles (skipped)",
+                    value=", ".join(f"`{n}`" for n in missing),
+                    inline=False,
+                )
+
+            picker_view = WarningRoleView(
+                warning_roles, self.target, self.invoker, self.reason
+            )
+            await interaction.followup.send(
+                embed=picker_embed, view=picker_view, ephemeral=True
+            )
 
 
 class InfractionView(discord.ui.View):
