@@ -51,7 +51,7 @@ APPLICATION_CHANNEL_NAME = os.environ.get(
     "APPLICATION_CHANNEL_NAME", "applications"
 )
 CALLSIGN_CHANNEL_NAME = os.environ.get(
-    "CALLSIGN_CHANNEL_NAME", "callsign-requests"
+    "CALLSIGN_CHANNEL_NAME", "1497269321293103244"
 )
 
 APPLICATION_QUESTIONS = [
@@ -150,6 +150,9 @@ def has_allowed_role():
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (id: {bot.user.id})")
+    if not getattr(bot, "_persistent_views_added", False):
+        bot.add_view(CallsignReviewView())
+        bot._persistent_views_added = True
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash command(s).")
@@ -872,6 +875,130 @@ async def infract_error(
         print(f"[infract.error] Could not respond to interaction: {error}")
 
 
+class CallsignReviewView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    def _is_staff(self, member: discord.abc.User) -> bool:
+        if not isinstance(member, discord.Member):
+            return False
+        return any(r.name.lower() in ALLOWED_ROLES for r in member.roles)
+
+    def _extract_user_id(self, embed: discord.Embed):
+        if embed.footer and embed.footer.text:
+            text = embed.footer.text
+            if text.startswith("User ID: "):
+                try:
+                    return int(text.removeprefix("User ID: ").strip())
+                except ValueError:
+                    return None
+        return None
+
+    async def _resolve_callsign(self, embed: discord.Embed) -> str:
+        for field in embed.fields:
+            if "callsign" in field.name.lower() and "would you like" in field.name.lower():
+                return field.value
+        return "—"
+
+    async def _finalize(
+        self,
+        interaction: discord.Interaction,
+        accepted: bool,
+    ):
+        if not self._is_staff(interaction.user):
+            await interaction.response.send_message(
+                "Only staff (Chief of Police, Assistant Chief, Deputy Chief, "
+                "Board of Chiefs) can review callsign requests.",
+                ephemeral=True,
+            )
+            return
+
+        original = interaction.message.embeds[0] if interaction.message.embeds else None
+        if original is None:
+            await interaction.response.send_message(
+                "Couldn't find the original request embed.", ephemeral=True
+            )
+            return
+
+        status_label = "Accepted" if accepted else "Cancelled"
+        new_color = 0x2ECC71 if accepted else 0xE74C3C
+
+        updated = discord.Embed(
+            title=original.title,
+            color=new_color,
+            timestamp=original.timestamp,
+        )
+        if original.thumbnail and original.thumbnail.url:
+            updated.set_thumbnail(url=original.thumbnail.url)
+        for field in original.fields:
+            updated.add_field(
+                name=field.name, value=field.value, inline=field.inline
+            )
+        updated.add_field(
+            name="Status",
+            value=f"**{status_label}** by {interaction.user.mention}",
+            inline=False,
+        )
+        if original.footer and original.footer.text:
+            updated.set_footer(text=original.footer.text)
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(embed=updated, view=self)
+
+        requester_id = self._extract_user_id(original)
+        if requester_id is not None and interaction.guild is not None:
+            requester = interaction.guild.get_member(requester_id)
+            if requester is None:
+                try:
+                    requester = await interaction.client.fetch_user(requester_id)
+                except discord.HTTPException:
+                    requester = None
+            if requester is not None:
+                callsign_text = await self._resolve_callsign(original)
+                dm_color = new_color
+                dm_embed = discord.Embed(
+                    title=f"Callsign Request {status_label}",
+                    color=dm_color,
+                    timestamp=datetime.datetime.now(datetime.timezone.utc),
+                )
+                dm_embed.add_field(
+                    name="Requested callsign", value=callsign_text, inline=False
+                )
+                dm_embed.add_field(
+                    name="Reviewed by", value=str(interaction.user), inline=False
+                )
+                if interaction.guild is not None:
+                    dm_embed.set_footer(text=f"Server: {interaction.guild.name}")
+                try:
+                    await requester.send(embed=dm_embed)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
+    @discord.ui.button(
+        label="Accept",
+        style=discord.ButtonStyle.success,
+        emoji="✅",
+        custom_id="callsign_review:accept",
+    )
+    async def accept(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._finalize(interaction, accepted=True)
+
+    @discord.ui.button(
+        label="Cancel",
+        style=discord.ButtonStyle.danger,
+        emoji="❌",
+        custom_id="callsign_review:cancel",
+    )
+    async def cancel(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await self._finalize(interaction, accepted=False)
+
+
 async def run_dm_questionnaire(
     interaction: discord.Interaction,
     user: discord.Member,
@@ -879,6 +1006,7 @@ async def run_dm_questionnaire(
     questions: list[str],
     review_channel_identifier: str,
     color: int,
+    review_view: discord.ui.View | None = None,
 ):
     try:
         dm = await user.create_dm()
@@ -957,7 +1085,10 @@ async def run_dm_questionnaire(
     submission.set_footer(text=f"User ID: {user.id}")
 
     try:
-        await channel.send(embed=submission)
+        if review_view is not None:
+            await channel.send(embed=submission, view=review_view)
+        else:
+            await channel.send(embed=submission)
         await dm.send(
             f"✅ Your **{title}** has been submitted! Staff will review it shortly."
         )
@@ -1017,6 +1148,7 @@ async def callsign(interaction: discord.Interaction):
         CALLSIGN_QUESTIONS,
         CALLSIGN_CHANNEL_NAME,
         0x9B59B6,
+        review_view=CallsignReviewView(),
     )
 
 
