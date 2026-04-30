@@ -8,13 +8,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
-if not TOKEN:
-    raise RuntimeError(
-        "DISCORD_BOT_TOKEN environment variable is not set. "
-        "Add it in the Replit Secrets tab."
-    )
-
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -1692,7 +1685,3 @@ async def restricted_command_error(
         await interaction.followup.send(message, ephemeral=True)
     else:
         await interaction.response.send_message(message, ephemeral=True)
-
-
-if __name__ == "__main__":
-    bot.run(TOKEN)
